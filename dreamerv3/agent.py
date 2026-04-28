@@ -36,8 +36,13 @@ class Agent(embodied.jax.Agent):
     self.config = config
 
     exclude = ('is_first', 'is_last', 'is_terminal', 'reward')
-    enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
-    dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
+    # log/ keys are for episode-level logging only; exclude from encoder and
+    # decoder so they are not fed to the agent in parallel mode (parallel.py
+    # strips them before policy calls) or reconstructed by the world model.
+    enc_space = {k: v for k, v in obs_space.items()
+                 if k not in exclude and not k.startswith('log/')}
+    dec_space = {k: v for k, v in obs_space.items()
+                 if k not in exclude and not k.startswith('log/')}
     self.enc = {
         'simple': rssm.Encoder,
     }[config.enc.typ](enc_space, **config.enc[config.enc.typ], name='enc')

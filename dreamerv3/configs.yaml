@@ -195,6 +195,31 @@ loconav:
   env.loconav.repeat: 1
   run.train_ratio: 256
 
+# ManiSkill-HAB: tasks are mshab_{task}_{subtask}
+# e.g. --configs mshab --task mshab_tidy_house_pick
+# Available tasks:    tidy_house | prepare_groceries | set_table
+# Available subtasks: pick | place | open | close
+mshab:
+  task: mshab_tidy_house_pick
+  env:
+    mshab:
+      split: train
+      max_episode_steps: 200
+      sim_backend: gpu      # set to 'cpu' for debugging
+      stationary_base: False
+      stationary_torso: False
+      stationary_head: True
+  run:
+    steps: 1e7
+    # Each env worker creates its own GPU context with num_envs=1 inside ManiSkill.
+    # Use envs=1 for maximum GPU memory headroom; increase if your GPU allows.
+    envs: 1
+    eval_envs: 0
+    train_ratio: 32
+    log_every: 120
+    report_every: 300
+    save_every: 900
+
 multicpu:
   batch_size: 12
   jax.mock_devices: 8
