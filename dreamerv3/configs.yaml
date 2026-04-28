@@ -204,6 +204,8 @@ mshab:
   task: mshab_tidy_house_pick
   jax:
     prealloc: False
+  batch_size: 8
+  batch_length: 32
   run:
     steps: 1e7
     envs: 1
