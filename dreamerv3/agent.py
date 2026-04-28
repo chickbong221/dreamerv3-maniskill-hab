@@ -302,8 +302,13 @@ class Agent(embodied.jax.Agent):
 
       video = jnp.pad(video, [[0, 0], [0, 0], [2, 2], [2, 2], [0, 0]])
       mask = jnp.zeros(video.shape, bool).at[:, :, 2:-2, 2:-2, :].set(True)
-      border = jnp.full((T, 3), jnp.array([0, 255, 0]), jnp.uint8)
-      border = border.at[T // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
+      _, T_vid, _, _, C_vid = video.shape
+      if C_vid == 3:
+        border = jnp.full((T_vid, 3), jnp.array([0, 255, 0]), jnp.uint8)
+        border = border.at[T_vid // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
+      else:
+        border = jnp.full((T_vid, C_vid), jnp.uint8(255))
+        border = border.at[T_vid // 2:].set(jnp.uint8(128))
       video = jnp.where(mask, video, border[None, :, None, None, :])
       video = jnp.concatenate([video, 0 * video[:, :10]], 1)
 
