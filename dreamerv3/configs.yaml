@@ -207,7 +207,7 @@ mshab:
   batch_size: 8
   batch_length: 64
   logger:
-    outputs: [jsonl]
+    outputs: [jsonl, wandb]
   run:
     steps: 1e7
     envs: 1
