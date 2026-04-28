@@ -20,7 +20,7 @@ defaults:
   errfile: False
 
   logger:
-    outputs: [jsonl, wandb]
+    outputs: [jsonl, scope]
     filter: 'score|length|fps|ratio|train/loss/|train/rand/'
     timer: True
     fps: 15
@@ -206,6 +206,8 @@ mshab:
     prealloc: False
   batch_size: 8
   batch_length: 64
+  logger:
+    outputs: [jsonl]
   run:
     steps: 1e7
     envs: 1

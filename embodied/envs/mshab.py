@@ -15,9 +15,7 @@ class MSHab(embodied.Env):
     pick | place | open | close
 
   Observation space produced:
-    depth_head    uint8   (128, 128, 1)  head camera depth, normalised to [0,255]
-    depth_hand    uint8   (128, 128, 1)  hand camera depth, normalised to [0,255]
-    proprio       float32 (D,)           flattened agent + extra state from MS-HAB
+    rgbd_head     uint8   (128, 128, 4)  head camera RGB (3ch) + depth (1ch), depth normalised to [0,255]
     log/success   float32 ()             1.0 when the current subtask succeeds
     log/fail      float32 ()             1.0 when the episode is failed
     reward        float32 ()
@@ -57,7 +55,7 @@ class MSHab(embodied.Env):
     import gymnasium as gym
     from mani_skill import ASSET_DIR
     from mshab.envs.planner import plan_data_from_file
-    from mshab.envs.wrappers import FetchActionWrapper, FetchDepthObservationWrapper
+    from mshab.envs.wrappers import FetchActionWrapper
     import mshab.envs  # noqa: registers env IDs with gymnasium
 
     rearrange_dir = (
@@ -70,7 +68,7 @@ class MSHab(embodied.Env):
     env = gym.make(
         f'{subtask.capitalize()}SubtaskTrain-v0',
         num_envs=1,
-        obs_mode='depth',
+        obs_mode='rgbd',
         reward_mode='normalized_dense',
         control_mode='pd_joint_delta_pos',
         render_mode='rgb_array',
@@ -83,9 +81,6 @@ class MSHab(embodied.Env):
         spawn_data_fp=spawn_data_fp,
         require_build_configs_repeated_equally_across_envs=False,
     )
-
-    # Depth obs wrapper: raw sensor → {state: (1,D), fetch_head_depth: (1,C,H,W), ...}
-    env = FetchDepthObservationWrapper(env, cat_state=True, cat_pixels=False)
 
     # Action wrapper: zero out head (and optionally base/torso) joints
     env = FetchActionWrapper(
@@ -100,13 +95,13 @@ class MSHab(embodied.Env):
 
     # ---- shape discovery via an initial reset ---------------------------
     raw_obs, _ = env.reset()
-    state_np = self._to_np(raw_obs['state'])             # (1, D)
-    head_np  = self._to_np(raw_obs['fetch_head_depth'])  # (1, C, H, W)
+    head_cam = raw_obs['sensor_data']['fetch_head']
+    rgb_np   = self._to_np(head_cam['rgb'])    # (1, H, W, 3)
+    depth_np = self._to_np(head_cam['depth'])  # (1, H, W, 1)
 
-    self._state_dim  = int(state_np.shape[-1])
     self._action_dim = int(env.action_space.shape[-1])
-    _, c, h, w = head_np.shape
-    self._depth_hwc  = (h, w, c)  # e.g. (128, 128, 1)
+    _, h, w, _ = rgb_np.shape
+    self._rgbd_hwc = (h, w, 4)  # RGB (3) + depth (1)
 
     # Reuse the cached reset obs so the first step() doesn't double-reset
     self._cached_obs = raw_obs
@@ -116,9 +111,7 @@ class MSHab(embodied.Env):
   @functools.cached_property
   def obs_space(self):
     return {
-        'depth_head':    elements.Space(np.uint8, self._depth_hwc),
-        'depth_hand':    elements.Space(np.uint8, self._depth_hwc),
-        'proprio':       elements.Space(np.float32, (self._state_dim,)),
+        'rgbd_head':     elements.Space(np.uint8, self._rgbd_hwc),
         'log/success':   elements.Space(np.float32),
         'log/fail':      elements.Space(np.float32),
         'reward':        elements.Space(np.float32),
@@ -176,13 +169,13 @@ class MSHab(embodied.Env):
 
   def _make_obs(self, raw, reward, success=0.0, fail=0.0,
                 is_first=False, is_last=False, is_terminal=False):
-    state = self._to_np(raw['state'])[0]              # (D,)
-    head  = self._to_np(raw['fetch_head_depth'])[0]   # (C, H, W)
-    hand  = self._to_np(raw['fetch_hand_depth'])[0]   # (C, H, W)
+    head_cam = raw['sensor_data']['fetch_head']
+    rgb   = self._to_np(head_cam['rgb'])[0]    # (H, W, 3) float32 0-255
+    depth = self._to_np(head_cam['depth'])[0]  # (H, W, 1) float32 metres
+    rgbd  = np.concatenate([rgb.astype(np.uint8),
+                             self._depth_to_uint8(depth)], axis=-1)  # (H, W, 4)
     return {
-        'depth_head':  self._depth_to_uint8(head.transpose(1, 2, 0)),
-        'depth_hand':  self._depth_to_uint8(hand.transpose(1, 2, 0)),
-        'proprio':     state.astype(np.float32),
+        'rgbd_head':   rgbd,
         'log/success': np.float32(success),
         'log/fail':    np.float32(fail),
         'reward':      np.float32(reward),

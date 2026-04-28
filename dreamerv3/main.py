@@ -1,5 +1,6 @@
 import importlib
 import os
+os.environ.setdefault('XLA_FLAGS', '--xla_gpu_enable_cupti=false')
 import pathlib
 import sys
 from functools import partial as bind
