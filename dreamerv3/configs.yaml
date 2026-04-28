@@ -35,6 +35,7 @@ defaults:
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
     dmc: {size: [64, 64], repeat: 1, proprio: True, image: True, camera: -1}
     loconav: {size: [64, 64], repeat: 1, camera: -1}
+    mshab: {split: train, max_episode_steps: 200, sim_backend: gpu, stationary_base: False, stationary_torso: False, stationary_head: True}
 
   replay:
     size: 5e6
@@ -201,18 +202,8 @@ loconav:
 # Available subtasks: pick | place | open | close
 mshab:
   task: mshab_tidy_house_pick
-  env:
-    mshab:
-      split: train
-      max_episode_steps: 200
-      sim_backend: gpu      # set to 'cpu' for debugging
-      stationary_base: False
-      stationary_torso: False
-      stationary_head: True
   run:
     steps: 1e7
-    # Each env worker creates its own GPU context with num_envs=1 inside ManiSkill.
-    # Use envs=1 for maximum GPU memory headroom; increase if your GPU allows.
     envs: 1
     eval_envs: 0
     train_ratio: 32
