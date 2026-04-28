@@ -81,6 +81,7 @@ class MSHab(embodied.Env):
         task_plans=plan_data.plans,
         scene_builder_cls=plan_data.dataset,
         spawn_data_fp=spawn_data_fp,
+        require_build_configs_repeated_equally_across_envs=False,
     )
 
     # Depth obs wrapper: raw sensor → {state: (1,D), fetch_head_depth: (1,C,H,W), ...}
