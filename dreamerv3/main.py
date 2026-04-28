@@ -150,6 +150,18 @@ def make_agent(config):
   ))
 
 
+class _WandBNoVideoOutput:
+  """WandBOutput wrapper that silently drops video/image arrays (ndim >= 3)."""
+  def __init__(self, *args, **kwargs):
+    self._inner = elements.logger.WandBOutput(*args, **kwargs)
+  def write(self, metrics):
+    scalar_only = {k: v for k, v in metrics.items()
+                   if not (hasattr(v, 'ndim') and v.ndim >= 3)}
+    self._inner.write(scalar_only)
+  def __getattr__(self, name):
+    return getattr(self._inner, name)
+
+
 def make_logger(config):
   step = elements.Counter()
   logdir = config.logdir
@@ -172,7 +184,7 @@ def make_logger(config):
           exp, run, proj, config.logger.user, config.flat))
     elif output == 'wandb':
       name = '/'.join(logdir.split('/')[-4:])
-      outputs.append(elements.logger.WandBOutput(name))
+      outputs.append(_WandBNoVideoOutput(name))
     elif output == 'scope':
       outputs.append(elements.logger.ScopeOutput(elements.Path(logdir)))
     else:

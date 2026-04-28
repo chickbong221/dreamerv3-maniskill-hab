@@ -4,7 +4,9 @@
       "WebFetch(domain:arth-shukla.github.io)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(python -c \"import elements; import inspect; print\\(inspect.getfile\\(elements\\)\\)\")",
+      "Bash(pip show *)"
     ]
   }
 }
