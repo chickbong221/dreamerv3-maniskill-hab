@@ -178,7 +178,7 @@ class MSHab(embodied.Env):
         'rgbd_head':   rgbd,
         'log/success': np.float32(success),
         'log/fail':    np.float32(fail),
-        'reward':      np.float32(reward),
+        'reward':      np.float32(reward if np.isfinite(reward) else 0.0),
         'is_first':    np.bool_(is_first),
         'is_last':     np.bool_(is_last),
         'is_terminal': np.bool_(is_terminal),

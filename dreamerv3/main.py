@@ -1,6 +1,6 @@
 import importlib
 import os
-os.environ.setdefault('XLA_FLAGS', '--xla_gpu_enable_cupti=false')
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')  # suppress XLA/CUPTI buffer warnings
 import pathlib
 import sys
 from functools import partial as bind
