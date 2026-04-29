@@ -213,9 +213,9 @@ mshab:
     envs: 1
     eval_envs: 0
     train_ratio: 32
-    log_every: 120
-    report_every: 300
-    save_every: 900
+    log_every: 20000
+    report_every: 50000
+    save_every: 100000
 
 multicpu:
   batch_size: 12

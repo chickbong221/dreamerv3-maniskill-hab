@@ -298,17 +298,18 @@ class Agent(embodied.jax.Agent):
       pred = jnp.concatenate([obsrecons[key].pred(), imgrecons[key].pred()], 1)
       pred = jnp.clip(pred * 255, 0, 255).astype(jnp.uint8)
       error = ((i32(pred) - i32(true) + 255) / 2).astype(np.uint8)
-      video = jnp.concatenate([true, pred, error], 2)
+      # Use only first 3 channels (RGB) for visualisation so border colours
+      # are always green/red regardless of whether obs has extra channels (e.g. depth).
+      true_vis  = true[..., :3]
+      pred_vis  = pred[..., :3]
+      error_vis = error[..., :3]
+      video = jnp.concatenate([true_vis, pred_vis, error_vis], 2)
 
       video = jnp.pad(video, [[0, 0], [0, 0], [2, 2], [2, 2], [0, 0]])
       mask = jnp.zeros(video.shape, bool).at[:, :, 2:-2, 2:-2, :].set(True)
-      _, T_vid, _, _, C_vid = video.shape
-      if C_vid == 3:
-        border = jnp.full((T_vid, 3), jnp.array([0, 255, 0]), jnp.uint8)
-        border = border.at[T_vid // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
-      else:
-        border = jnp.full((T_vid, C_vid), jnp.uint8(255))
-        border = border.at[T_vid // 2:].set(jnp.uint8(128))
+      _, T_vid, _, _, _ = video.shape
+      border = jnp.full((T_vid, 3), jnp.array([0, 255, 0]), jnp.uint8)
+      border = border.at[T_vid // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
       video = jnp.where(mask, video, border[None, :, None, None, :])
       video = jnp.concatenate([video, 0 * video[:, :10]], 1)
 
