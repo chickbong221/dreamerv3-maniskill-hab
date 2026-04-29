@@ -305,8 +305,8 @@ class Agent(embodied.jax.Agent):
       error_vis = error[..., :3]
       video = jnp.concatenate([true_vis, pred_vis, error_vis], 2)
 
-      video = jnp.pad(video, [[0, 0], [0, 0], [2, 2], [2, 2], [0, 0]])
-      mask = jnp.zeros(video.shape, bool).at[:, :, 2:-2, 2:-2, :].set(True)
+      video = jnp.pad(video, [[0, 0], [0, 0], [6, 6], [6, 6], [0, 0]])
+      mask = jnp.zeros(video.shape, bool).at[:, :, 6:-6, 6:-6, :].set(True)
       _, T_vid, _, _, _ = video.shape
       border = jnp.full((T_vid, 3), jnp.array([0, 255, 0]), jnp.uint8)
       border = border.at[T_vid // 2:].set(jnp.array([255, 0, 0], jnp.uint8))

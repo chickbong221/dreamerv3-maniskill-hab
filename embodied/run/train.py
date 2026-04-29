@@ -6,6 +6,23 @@ import embodied
 import numpy as np
 
 
+def _save_videos(logdir, step, mets, fps=4):
+  import pathlib
+  video_dir = pathlib.Path(str(logdir)) / 'videos'
+  video_dir.mkdir(parents=True, exist_ok=True)
+  for key, val in mets.items():
+    if not (isinstance(val, np.ndarray) and val.ndim == 4 and val.dtype == np.uint8):
+      continue
+    tag = key.replace('/', '_')
+    try:
+      import imageio
+      path = str(video_dir / f'step{step:08d}_{tag}.mp4')
+      imageio.mimwrite(path, list(val), fps=fps, macro_block_size=1)
+    except Exception:
+      path = str(video_dir / f'step{step:08d}_{tag}.npy')
+      np.save(path, val)
+
+
 def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
 
   agent = make_agent()
@@ -101,7 +118,9 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
       for _ in range(args.consec_report * args.report_batches):
         carry_report, mets = agent.report(carry_report, next(stream_report))
         agg.add(mets)
-      logger.add(agg.result(), prefix='report')
+      report_mets = agg.result()
+      _save_videos(logdir, int(step), report_mets, fps=args.logger.fps)
+      logger.add(report_mets, prefix='report')
 
     if should_log(step):
       logger.add(train_agg.result())
