@@ -64,6 +64,7 @@ def main(argv=None):
       consec_train=config.consec_train,
       consec_report=config.consec_report,
       replay_context=config.replay_context,
+      logger=config.logger,
   )
 
   if config.script == 'train':
@@ -171,6 +172,9 @@ def make_logger(config):
       outputs.append(elements.logger.ExpaOutput(
           exp, run, proj, config.logger.user, config.flat))
     elif output == 'wandb':
+      import wandb as _wandb
+      _orig_wandb_video = _wandb.Video
+      _wandb.Video = lambda data, *a, format='mp4', **kw: _orig_wandb_video(data, *a, format=format, **kw)
       name = '/'.join(logdir.split('/')[-4:])
       outputs.append(elements.logger.WandBOutput(name))
     elif output == 'scope':
