@@ -52,7 +52,7 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
     episode.add('length', 1, agg='sum')
     episode.add('rewards', tran['reward'], agg='stack')
     for key, value in tran.items():
-      if value.dtype == np.uint8 and value.ndim == 3:
+      if value.dtype == np.uint8 and value.ndim == 3 and key != 'rgb_head':
         if worker == 0:
           episode.add(f'policy_{key}', value, agg='stack')
       elif key.startswith('log/'):

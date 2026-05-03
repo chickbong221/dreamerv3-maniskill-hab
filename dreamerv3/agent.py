@@ -291,31 +291,48 @@ class Agent(embodied.jax.Agent):
         dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs['is_first'])),
         training=False)
 
-    # Video preds
+    # 5-row image panel per image key:
+    #   row 0: ground truth (all T frames)
+    #   row 1: reconstruction (first T2 frames; second half gray)
+    #   row 2: |true - recon|  (first T2 frames; second half gray)
+    #   row 3: imagination     (first half gray; second T-T2 frames)
+    #   row 4: |true - imag|   (first half gray; second T-T2 frames)
+    T2 = T // 2
     for key in self.dec.imgkeys:
       assert obs[key].dtype == jnp.uint8
-      true = obs[key][:RB]
-      pred = jnp.concatenate([obsrecons[key].pred(), imgrecons[key].pred()], 1)
-      pred = jnp.clip(pred * 255, 0, 255).astype(jnp.uint8)
-      error = ((i32(pred) - i32(true) + 255) / 2).astype(np.uint8)
-      # Use only first 3 channels (RGB) for visualisation so border colours
-      # are always green/red regardless of whether obs has extra channels (e.g. depth).
-      true_vis  = true[..., :3]
-      pred_vis  = pred[..., :3]
-      error_vis = error[..., :3]
-      video = jnp.concatenate([true_vis, pred_vis, error_vis], 2)
+      true = obs[key][:RB]                                           # (RB, T,    H, W, C)
+      recon = jnp.clip(obsrecons[key].pred() * 255, 0, 255).astype(jnp.uint8)  # (RB, T2,   H, W, C)
+      imag  = jnp.clip(imgrecons[key].pred() * 255, 0, 255).astype(jnp.uint8)  # (RB, T-T2, H, W, C)
 
-      video = jnp.pad(video, [[0, 0], [0, 0], [3, 3], [3, 3], [0, 0]])
-      mask = jnp.zeros(video.shape, bool).at[:, :, 3:-3, 3:-3, :].set(True)
-      _, T_vid, _, _, _ = video.shape
-      border = jnp.full((T_vid, 3), jnp.array([0, 255, 0]), jnp.uint8)
-      border = border.at[T_vid // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
-      video = jnp.where(mask, video, border[None, :, None, None, :])
-      video = jnp.concatenate([video, 0 * video[:, :10]], 1)
+      true_v  = true[..., :3]   # keep only RGB for display
+      recon_v = recon[..., :3]
+      imag_v  = imag[..., :3]
 
-      B, T, H, W, C = video.shape
-      grid = video.transpose((1, 2, 0, 3, 4)).reshape((T, H, B * W, C))
-      metrics[f'openloop/{key}'] = grid
+      diff_recon = jnp.abs(i32(true_v[:, :T2]) - i32(recon_v)).astype(jnp.uint8)
+      diff_imag  = jnp.abs(i32(true_v[:, T2:]) - i32(imag_v)).astype(jnp.uint8)
+
+      H_img, W_img = true_v.shape[2], true_v.shape[3]
+      gray_r = jnp.full((RB, T - T2, H_img, W_img, 3), 128, dtype=jnp.uint8)
+      gray_l = jnp.full((RB, T2,     H_img, W_img, 3), 128, dtype=jnp.uint8)
+
+      rows = [
+          true_v,
+          jnp.concatenate([recon_v,    gray_r], 1),
+          jnp.concatenate([diff_recon, gray_r], 1),
+          jnp.concatenate([gray_l,     imag_v],    1),
+          jnp.concatenate([gray_l,     diff_imag], 1),
+      ]
+
+      # (RB, T, H, W, 3) → (H, RB*T*W, 3): tile T frames along width, B items alongside
+      strips = []
+      for row in rows:
+        rb, t, h, w, c = row.shape
+        s = row.transpose((0, 2, 1, 3, 4))    # (RB, H, T, W, C)
+        s = s.reshape((rb, h, t * w, c))       # (RB, H, T*W, C)
+        s = s.transpose((1, 0, 2, 3))          # (H, RB, T*W, C)
+        strips.append(s.reshape((h, rb * t * w, c)))  # (H, RB*T*W, C)
+
+      metrics[f'openloop/{key}'] = jnp.concatenate(strips, 0)  # (5*H, RB*T*W, 3)
 
     carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, metrics

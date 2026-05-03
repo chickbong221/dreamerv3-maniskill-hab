@@ -15,7 +15,9 @@ class MSHab(embodied.Env):
     pick | place | open | close
 
   Observation space produced:
-    rgbd_head     uint8   (128, 128, 4)  head camera RGB (3ch) + depth (1ch), depth normalised to [0,255]
+    rgb_head      uint8   (128, 128, 3)  head camera RGB
+    proprio       float32 (N,)           qpos[3:] + qvel[3:] + tcp_pose_wrt_base (7) +
+                                         obj_pose_wrt_base (7) + goal_pos_wrt_base (3) + is_grasped (1)
     log/success   float32 ()             1.0 when the current subtask succeeds
     log/fail      float32 ()             1.0 when the episode is failed
     reward        float32 ()
@@ -29,9 +31,6 @@ class MSHab(embodied.Env):
   """
 
   _SUBTASKS = frozenset({'pick', 'place', 'open', 'close'})
-
-  # Depth clipping range (metres).  Objects beyond this map to 255.
-  DEPTH_MAX_M = 10.0
 
   def __init__(
       self,
@@ -97,11 +96,11 @@ class MSHab(embodied.Env):
     raw_obs, _ = env.reset()
     head_cam = raw_obs['sensor_data']['fetch_head']
     rgb_np   = self._to_np(head_cam['rgb'])    # (1, H, W, 3)
-    depth_np = self._to_np(head_cam['depth'])  # (1, H, W, 1)
 
     self._action_dim = int(env.action_space.shape[-1])
     _, h, w, _ = rgb_np.shape
-    self._rgbd_hwc = (h, w, 4)  # RGB (3) + depth (1)
+    self._rgb_hwc = (h, w, 3)
+    self._proprio_dim = len(self._extract_proprio(raw_obs))
 
     # Reuse the cached reset obs so the first step() doesn't double-reset
     self._cached_obs = raw_obs
@@ -111,7 +110,8 @@ class MSHab(embodied.Env):
   @functools.cached_property
   def obs_space(self):
     return {
-        'rgbd_head':     elements.Space(np.uint8, self._rgbd_hwc),
+        'rgb_head':      elements.Space(np.uint8, self._rgb_hwc),
+        'proprio':       elements.Space(np.float32, (self._proprio_dim,)),
         'log/success':   elements.Space(np.float32),
         'log/fail':      elements.Space(np.float32),
         'reward':        elements.Space(np.float32),
@@ -167,15 +167,27 @@ class MSHab(embodied.Env):
 
   # ------------------------------------------------------------------ helpers
 
+  def _extract_proprio(self, raw_obs):
+    """Concatenate proprioceptive fields matching the original PPO state vector."""
+    agent = raw_obs['agent']
+    extra = raw_obs['extra']
+    parts = [
+        self._to_np(agent['qpos'])[0, 3:],                  # strip base DOFs
+        self._to_np(agent['qvel'])[0, 3:],                  # strip base DOFs
+        self._to_np(extra['tcp_pose_wrt_base'])[0],         # (7,) xyz+quat
+        self._to_np(extra['obj_pose_wrt_base'])[0],         # (7,) xyz+quat
+        self._to_np(extra['goal_pos_wrt_base'])[0],         # (3,) xyz
+        self._to_np(extra['is_grasped'])[0].reshape(-1),    # (1,)
+    ]
+    return np.concatenate(parts).astype(np.float32)
+
   def _make_obs(self, raw, reward, success=0.0, fail=0.0,
                 is_first=False, is_last=False, is_terminal=False):
     head_cam = raw['sensor_data']['fetch_head']
-    rgb   = self._to_np(head_cam['rgb'])[0]    # (H, W, 3) float32 0-255
-    depth = self._to_np(head_cam['depth'])[0]  # (H, W, 1) float32 metres
-    rgbd  = np.concatenate([rgb.astype(np.uint8),
-                             self._depth_to_uint8(depth)], axis=-1)  # (H, W, 4)
+    rgb = self._to_np(head_cam['rgb'])[0].astype(np.uint8)  # (H, W, 3)
     return {
-        'rgbd_head':   rgbd,
+        'rgb_head':    rgb,
+        'proprio':     self._extract_proprio(raw),
         'log/success': np.float32(success),
         'log/fail':    np.float32(fail),
         'reward':      np.float32(reward if np.isfinite(reward) else 0.0),
@@ -183,11 +195,6 @@ class MSHab(embodied.Env):
         'is_last':     np.bool_(is_last),
         'is_terminal': np.bool_(is_terminal),
     }
-
-  def _depth_to_uint8(self, depth_hwc):
-    """Clip depth (metres) to [0, DEPTH_MAX_M] and quantise to uint8."""
-    return (np.clip(depth_hwc, 0.0, self.DEPTH_MAX_M)
-            / self.DEPTH_MAX_M * 255.0).astype(np.uint8)
 
   @staticmethod
   def _to_np(x):

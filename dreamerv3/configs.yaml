@@ -38,7 +38,7 @@ defaults:
     mshab: {split: train, max_episode_steps: 200, sim_backend: gpu, stationary_base: False, stationary_torso: False, stationary_head: True}
 
   replay:
-    size: 5e6
+    size: 1e6
     online: True
     fracs: {uniform: 1.0, priority: 0.0, recency: 0.0}
     prio: {exponent: 0.8, maxfrac: 0.5, initial: inf, zero_on_sample: True}
