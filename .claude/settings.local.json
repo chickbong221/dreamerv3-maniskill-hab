@@ -11,7 +11,8 @@
       "Bash(python -c \"import elements; print\\(elements.__file__\\)\")",
       "Bash(pip3 show *)",
       "Bash(python *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(python3 -c \"import elements; import os; print\\(os.path.dirname\\(elements.__file__\\)\\)\")"
     ]
   }
 }

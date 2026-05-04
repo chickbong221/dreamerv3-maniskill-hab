@@ -262,7 +262,7 @@ class Agent(embodied.jax.Agent):
     # Train metrics
     _, (new_carry, entries, outs, mets) = self.loss(
         carry, obs, prevact, training=False)
-    mets.update(mets)
+    metrics.update(mets)
 
     # Grad norms
     if self.config.report_gradnorms:
@@ -332,7 +332,8 @@ class Agent(embodied.jax.Agent):
         s = s.transpose((1, 0, 2, 3))          # (H, RB, T*W, C)
         strips.append(s.reshape((h, rb * t * w, c)))  # (H, RB*T*W, C)
 
-      metrics[f'openloop/{key}'] = jnp.concatenate(strips, 0)  # (5*H, RB*T*W, 3)
+      panel = jnp.concatenate(strips, 0)                        # (5*H, RB*T*W, 3)
+      metrics[f'openloop/{key}'] = panel[None]                  # (1, 5*H, RB*T*W, 3)
 
     carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, metrics
