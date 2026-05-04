@@ -179,7 +179,7 @@ class MSHab(embodied.Env):
         self._to_np(extra['goal_pos_wrt_base'])[0],         # (3,) xyz
         self._to_np(extra['is_grasped'])[0].reshape(-1),    # (1,)
     ]
-    return np.concatenate(parts).astype(np.float32)
+    return np.nan_to_num(np.concatenate(parts), nan=0.0).astype(np.float32)
 
   def _make_obs(self, raw, reward, success=0.0, fail=0.0,
                 is_first=False, is_last=False, is_terminal=False):
