@@ -291,59 +291,24 @@ class Agent(embodied.jax.Agent):
         dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs['is_first'])),
         training=False)
 
-    # Per image key: log one image per 5-frame chunk.
-    # Each image is a grid: rows = RB batches × 5 vis types, cols = 5 time frames.
-    #   vis row 0: ground truth
-    #   vis row 1: reconstruction (gray where not available)
-    #   vis row 2: |true - recon| diff
-    #   vis row 3: imagination    (gray where not available)
-    #   vis row 4: |true - imag|  diff
-    T2 = T // 2
-    chunk_size = 5
-    num_chunks = max(0, (T - 4) // chunk_size)
+    # Video preds
     for key in self.dec.imgkeys:
       assert obs[key].dtype == jnp.uint8
-      true = obs[key][:RB]                                                       # (RB, T,    H, W, C)
-      recon = jnp.clip(obsrecons[key].pred() * 255, 0, 255).astype(jnp.uint8)  # (RB, T2,   H, W, C)
-      imag  = jnp.clip(imgrecons[key].pred() * 255, 0, 255).astype(jnp.uint8)  # (RB, T-T2, H, W, C)
+      true = obs[key][:RB]
+      pred = jnp.concatenate([obsrecons[key].pred(), imgrecons[key].pred()], 1)
+      pred = jnp.clip(pred * 255, 0, 255).astype(jnp.uint8)
+      error = ((i32(pred) - i32(true) + 255) / 2).astype(np.uint8)
+      video = jnp.concatenate([true, pred, error], 2)
 
-      true_v  = true[..., :3]
-      recon_v = recon[..., :3]
-      imag_v  = imag[..., :3]
+      video = jnp.pad(video, [[0, 0], [0, 0], [2, 2], [2, 2], [0, 0]])
+      mask = jnp.zeros(video.shape, bool).at[:, :, 2:-2, 2:-2, :].set(True)
+      border = jnp.full((T, 3), jnp.array([0, 255, 0]), jnp.uint8)
+      border = border.at[T // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
+      video = jnp.where(mask, video, border[None, :, None, None, :])
 
-      diff_recon = jnp.abs(i32(true_v[:, :T2]) - i32(recon_v)).astype(jnp.uint8)
-      diff_imag  = jnp.abs(i32(true_v[:, T2:]) - i32(imag_v)).astype(jnp.uint8)
-
-      H_img, W_img = true_v.shape[2], true_v.shape[3]
-      gray_r = jnp.full((RB, T - T2, H_img, W_img, 3), 128, dtype=jnp.uint8)
-      gray_l = jnp.full((RB, T2,     H_img, W_img, 3), 128, dtype=jnp.uint8)
-
-      rows = [
-          true_v,
-          jnp.concatenate([recon_v,    gray_r], 1),
-          jnp.concatenate([diff_recon, gray_r], 1),
-          jnp.concatenate([gray_l,     imag_v],    1),
-          jnp.concatenate([gray_l,     diff_imag], 1),
-      ]  # each (RB, T, H_img, W_img, 3)
-
-      for chunk_idx in range(num_chunks):
-        start = chunk_idx * chunk_size
-        end   = start + chunk_size
-
-        # Tile 5 frames horizontally for each vis row: (RB, H, 5*W, 3)
-        strips = []
-        for row in rows:
-          r = row[:, start:end]                        # (RB, 5, H, W, 3)
-          rb, t5, h, w, c = r.shape
-          s = r.transpose((0, 2, 1, 3, 4))            # (RB, H, 5, W, 3)
-          strips.append(s.reshape((rb, h, t5 * w, c)))  # (RB, H, 5*W, 3)
-
-        # Stack 5 vis rows vertically per batch: (RB, 5*H, 5*W, 3)
-        grid = jnp.concatenate(strips, axis=1)
-        rb, h5, w5, c = grid.shape
-        # Flatten batches vertically: (RB*5*H, 5*W, 3)
-        grid = grid.reshape((rb * h5, w5, c))
-        metrics[f'openloop/{key}/chunk_{chunk_idx}'] = grid[None]  # (1, RB*5*H, 5*W, 3)
+      B, T, H, W, C = video.shape
+      grid = video.transpose((1, 2, 0, 3, 4)).reshape((T, H, B * W, C))
+      metrics[f'openloop/{key}'] = grid
 
     carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, metrics
