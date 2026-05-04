@@ -291,20 +291,23 @@ class Agent(embodied.jax.Agent):
         dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs['is_first'])),
         training=False)
 
-    # 5-row image panel per image key:
-    #   row 0: ground truth (all T frames)
-    #   row 1: reconstruction (first T2 frames; second half gray)
-    #   row 2: |true - recon|  (first T2 frames; second half gray)
-    #   row 3: imagination     (first half gray; second T-T2 frames)
-    #   row 4: |true - imag|   (first half gray; second T-T2 frames)
+    # Per image key: log one image per 5-frame chunk.
+    # Each image is a grid: rows = RB batches × 5 vis types, cols = 5 time frames.
+    #   vis row 0: ground truth
+    #   vis row 1: reconstruction (gray where not available)
+    #   vis row 2: |true - recon| diff
+    #   vis row 3: imagination    (gray where not available)
+    #   vis row 4: |true - imag|  diff
     T2 = T // 2
+    chunk_size = 5
+    num_chunks = max(0, (T - 4) // chunk_size)
     for key in self.dec.imgkeys:
       assert obs[key].dtype == jnp.uint8
-      true = obs[key][:RB]                                           # (RB, T,    H, W, C)
+      true = obs[key][:RB]                                                       # (RB, T,    H, W, C)
       recon = jnp.clip(obsrecons[key].pred() * 255, 0, 255).astype(jnp.uint8)  # (RB, T2,   H, W, C)
       imag  = jnp.clip(imgrecons[key].pred() * 255, 0, 255).astype(jnp.uint8)  # (RB, T-T2, H, W, C)
 
-      true_v  = true[..., :3]   # keep only RGB for display
+      true_v  = true[..., :3]
       recon_v = recon[..., :3]
       imag_v  = imag[..., :3]
 
@@ -321,19 +324,26 @@ class Agent(embodied.jax.Agent):
           jnp.concatenate([diff_recon, gray_r], 1),
           jnp.concatenate([gray_l,     imag_v],    1),
           jnp.concatenate([gray_l,     diff_imag], 1),
-      ]
+      ]  # each (RB, T, H_img, W_img, 3)
 
-      # (RB, T, H, W, 3) → (H, RB*T*W, 3): tile T frames along width, B items alongside
-      strips = []
-      for row in rows:
-        rb, t, h, w, c = row.shape
-        s = row.transpose((0, 2, 1, 3, 4))    # (RB, H, T, W, C)
-        s = s.reshape((rb, h, t * w, c))       # (RB, H, T*W, C)
-        s = s.transpose((1, 0, 2, 3))          # (H, RB, T*W, C)
-        strips.append(s.reshape((h, rb * t * w, c)))  # (H, RB*T*W, C)
+      for chunk_idx in range(num_chunks):
+        start = chunk_idx * chunk_size
+        end   = start + chunk_size
 
-      panel = jnp.concatenate(strips, 0)                        # (5*H, RB*T*W, 3)
-      metrics[f'openloop/{key}'] = panel[None]                  # (1, 5*H, RB*T*W, 3)
+        # Tile 5 frames horizontally for each vis row: (RB, H, 5*W, 3)
+        strips = []
+        for row in rows:
+          r = row[:, start:end]                        # (RB, 5, H, W, 3)
+          rb, t5, h, w, c = r.shape
+          s = r.transpose((0, 2, 1, 3, 4))            # (RB, H, 5, W, 3)
+          strips.append(s.reshape((rb, h, t5 * w, c)))  # (RB, H, 5*W, 3)
+
+        # Stack 5 vis rows vertically per batch: (RB, 5*H, 5*W, 3)
+        grid = jnp.concatenate(strips, axis=1)
+        rb, h5, w5, c = grid.shape
+        # Flatten batches vertically: (RB*5*H, 5*W, 3)
+        grid = grid.reshape((rb * h5, w5, c))
+        metrics[f'openloop/{key}/chunk_{chunk_idx}'] = grid[None]  # (1, RB*5*H, 5*W, 3)
 
     carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, metrics
